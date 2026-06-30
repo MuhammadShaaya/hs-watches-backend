@@ -1,0 +1,400 @@
+// H&S Watches — Prisma Schema
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  CUSTOMER
+}
+
+enum ProductStatus {
+  ACTIVE
+  DRAFT
+}
+
+enum Gender {
+  MEN
+  WOMEN
+  UNISEX
+}
+
+enum Movement {
+  AUTOMATIC
+  QUARTZ
+  MANUAL_WIND
+  SMART
+}
+
+enum CaseMaterial {
+  STAINLESS_STEEL
+  TITANIUM
+  ROSE_GOLD
+  YELLOW_GOLD
+  CERAMIC
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum PaymentMethod {
+  COD
+}
+
+enum CouponType {
+  PERCENTAGE
+  FIXED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  ORDER
+  STOCK
+  REVIEW
+  SYSTEM
+}
+
+// ──────────────────────────────────────────────
+// CORE MODELS
+// ──────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String? // null when account was created via Google OAuth
+  googleId      String?   @unique
+  role          Role      @default(CUSTOMER)
+  avatar        String?
+  phone         String?
+  blocked       Boolean   @default(false)
+  emailVerified Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  addresses     Address[]
+  orders        Order[]
+  reviews       Review[]
+  wishlistItems WishlistItem[]
+  notifications Notification[]
+  blogComments  BlogComment[]
+
+  @@index([email])
+}
+
+model Address {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName   String
+  phone      String
+  street     String
+  city       String
+  province   String
+  postalCode String
+  country    String   @default("United States")
+  isDefault  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  orders Order[]
+
+  @@index([userId])
+}
+
+model Category {
+  id           String    @id @default(cuid())
+  name         String    @unique
+  slug         String    @unique
+  description  String?
+  createdAt    DateTime  @default(now())
+  products     Product[]
+}
+
+model Brand {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  logo      String?
+  createdAt DateTime  @default(now())
+  products  Product[]
+}
+
+model Product {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  sku         String        @unique
+  barcode     String?       @unique
+  name        String
+  gender      Gender
+  movement    Movement
+  caseMaterial CaseMaterial
+  caseSize    String
+  price       Decimal       @db.Decimal(10, 2)
+  salePrice   Decimal?      @db.Decimal(10, 2)
+  stock       Int           @default(0)
+  weightGrams Int?
+  dimensions  String?
+  shortDescription String?
+  description String?
+  warranty    String?
+  status      ProductStatus @default(DRAFT)
+  featured    Boolean       @default(false)
+  trending    Boolean       @default(false)
+  newArrival  Boolean       @default(false)
+  bestSeller  Boolean       @default(false)
+  seoTitle    String?
+  seoDescription String?
+  seoKeywords String[]
+  tags        String[]
+
+  categoryId  String?
+  category    Category?     @relation(fields: [categoryId], references: [id])
+  brandId     String?
+  brand       Brand?        @relation(fields: [brandId], references: [id])
+
+  images        ProductImage[]
+  specifications ProductSpecification[]
+  strapOptions  ProductVariantOption[] @relation("StrapOptions")
+  colorOptions  ProductVariantOption[] @relation("ColorOptions")
+  reviews       Review[]
+  orderItems    OrderItem[]
+  wishlistItems WishlistItem[]
+  inventoryLogs InventoryLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([brandId])
+}
+
+model ProductImage {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  alt       String?
+  isMain    Boolean @default(false)
+  order     Int     @default(0)
+
+  @@index([productId])
+}
+
+model ProductSpecification {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label     String
+  value     String
+
+  @@index([productId])
+}
+
+model ProductVariantOption {
+  id              String   @id @default(cuid())
+  label           String
+  hex             String?
+  priceDelta      Decimal? @db.Decimal(10, 2)
+  strapProductId  String?
+  strapProduct    Product? @relation("StrapOptions", fields: [strapProductId], references: [id], onDelete: Cascade)
+  colorProductId  String?
+  colorProduct    Product? @relation("ColorOptions", fields: [colorProductId], references: [id], onDelete: Cascade)
+}
+
+model Review {
+  id               String       @id @default(cuid())
+  productId        String
+  product          Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId           String?
+  user             User?        @relation(fields: [userId], references: [id])
+  customerName     String
+  rating           Int
+  title            String?
+  comment          String
+  verifiedPurchase Boolean      @default(false)
+  helpfulCount     Int          @default(0)
+  status           ReviewStatus @default(PENDING)
+  createdAt        DateTime     @default(now())
+
+  @@index([productId])
+  @@index([status])
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique // human-readable e.g. ORD-10001
+  userId          String?
+  user            User?         @relation(fields: [userId], references: [id])
+  guestEmail      String?
+  addressId       String?
+  shippingAddress Address?      @relation(fields: [addressId], references: [id])
+
+  subtotal  Decimal     @db.Decimal(10, 2)
+  shipping  Decimal     @db.Decimal(10, 2) @default(0)
+  tax       Decimal     @db.Decimal(10, 2)
+  discount  Decimal     @db.Decimal(10, 2) @default(0)
+  total     Decimal     @db.Decimal(10, 2)
+  status    OrderStatus @default(PENDING)
+  paymentMethod PaymentMethod @default(COD)
+  orderNotes String?
+  couponCode String?
+  estimatedDelivery DateTime?
+
+  items     OrderItem[]
+  timeline  OrderStatusEvent[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([orderNumber])
+  @@index([status])
+}
+
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  nameSnapshot  String
+  imageSnapshot String?
+  unitPrice     Decimal  @db.Decimal(10, 2)
+  quantity      Int
+  selectedColor String?
+  selectedStrap String?
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderStatusEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  date      DateTime    @default(now())
+
+  @@index([orderId])
+}
+
+model Coupon {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  type        CouponType
+  value       Decimal    @db.Decimal(10, 2)
+  expiry      DateTime
+  usageLimit  Int
+  usedCount   Int        @default(0)
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+}
+
+model WishlistItem {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  addedAt   DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@index([userId])
+}
+
+model InventoryLog {
+  id        String   @id @default(cuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  change    Int
+  reason    String
+  createdAt DateTime @default(now())
+
+  @@index([productId])
+}
+
+model BlogPost {
+  id             String        @id @default(cuid())
+  slug           String        @unique
+  title          String
+  excerpt        String?
+  content        String
+  category       String
+  tags           String[]
+  featuredImage  String?
+  author         String
+  publishedAt    DateTime      @default(now())
+  comments       BlogComment[]
+}
+
+model BlogComment {
+  id         String   @id @default(cuid())
+  blogPostId String
+  blogPost   BlogPost @relation(fields: [blogPostId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  name       String
+  comment    String
+  createdAt  DateTime @default(now())
+
+  @@index([blogPostId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String?
+  user      User?            @relation(fields: [userId], references: [id])
+  message   String
+  type      NotificationType
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+}
+
+model StoreSettings {
+  id                 String  @id @default("singleton")
+  storeName          String  @default("H&S Watches")
+  tagline            String  @default("Time, Refined.")
+  logoUrl            String?
+  faviconUrl         String?
+  contactEmail       String?
+  contactPhone       String?
+  address            String?
+  taxRate            Decimal @db.Decimal(5, 4) @default(0.08)
+  freeShippingThreshold Decimal @db.Decimal(10, 2) @default(0)
+  instagramUrl       String?
+  facebookUrl        String?
+  pinterestUrl       String?
+  smtpHost           String?
+  smtpPort           Int?
+  smtpUser           String?
+  smtpPassword       String?
+  seoDefaultTitle    String?
+  seoDefaultDescription String?
+}
